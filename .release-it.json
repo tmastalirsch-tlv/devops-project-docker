@@ -1,0 +1,41 @@
+{
+  "git": {
+    "commitMessage": "🚀 Release v${version}",
+    "tagName": "v${version}",
+    "requireBranch": ["main", "develop", "release/*"],
+    "push": true,
+    "requireCleanWorkingDir": true
+  },
+  "npm": {
+    "publish": false,
+    "skipChecks": true
+  },
+  "github": {
+    "release": true,
+    "releaseName": "🦕 Jurassic World API v${version}",
+    "releaseNotes": "## 🦕 Jurassic World API Release v${version}\n\n### What's New\n- Automated release with release-it\n- Improved park management features\n- Enhanced security protocols\n\n### 🔧 Technical Updates\n- Version bump to ${version}\n- Updated Docker image\n- Code quality improvements\n\n### 🚀 Deployment\nThis release is ready for production deployment.\n\n---\n**⚠️ Safety Notice**: All dinosaur containment protocols have been verified.",
+    "draft": false,
+    "preRelease": false
+  },
+  "hooks": {
+    "before:init": [
+      "npm run lint",
+      "npm test"
+    ],
+    "before:git:release": [
+      "npm run build"
+    ],
+    "after:release": [
+      "echo 🎉 Successfully released Jurassic World API v${version}!",
+      "echo 📦 Docker image should be rebuilt with new version",
+      "echo 🔗 Release URL: ${repo.protocol}://${repo.host}/${repo.owner}/${repo.repository}/releases/tag/${tagName}"
+    ]
+  },
+  "plugins": {
+    "@release-it/conventional-changelog": {
+      "preset": "angular",
+      "infile": "CHANGELOG.md",
+      "header": "# 🦕 Jurassic World API Changelog"
+    }
+  }
+}

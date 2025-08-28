@@ -1,0 +1,305 @@
+name: 🔄 Repository Dispatch Handler
+
+# Dieser Workflow wird durch Repository Dispatch Events ausgelöst
+on:
+  repository_dispatch:
+    types: 
+      - deploy-staging      # Deployment zu Staging-Umgebung
+      - deploy-production   # Deployment zu Production-Umgebung
+      - run-tests          # Manuelle Test-Ausführung
+      - sync-dependencies  # Dependency Updates von anderen Repos
+      - custom-build       # Benutzerdefinierte Build-Aktionen
+
+env:
+  NODE_VERSION: '22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Job für Deployment-Events
+  deploy:
+    name: 🚀 Deploy Application
+    runs-on: ubuntu-latest
+    if: github.event.action == 'deploy-staging' || github.event.action == 'deploy-production'
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Verwende ref aus dem client_payload falls verfügbar
+          ref: ${{ github.event.client_payload.ref || github.ref }}
+
+      - name: 📋 Display Event Info
+        run: |
+          echo "🔔 Repository Dispatch Event Details:"
+          echo "Action: ${{ github.event.action }}"
+          echo "Sender: ${{ github.event.sender.login }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Ref: ${{ github.event.client_payload.ref || github.ref }}"
+          echo "Environment: ${{ github.event.client_payload.environment || 'default' }}"
+          echo "Version: ${{ github.event.client_payload.version || 'latest' }}"
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🧪 Run tests
+        run: npm test
+
+      - name: 🏗️ Build application
+        run: npm run build
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🔐 Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🏷️ Generate tags for deployment
+        id: tags
+        run: |
+          VERSION="${{ github.event.client_payload.version || 'dispatch' }}"
+          ENVIRONMENT="${{ github.event.client_payload.environment || github.event.action }}"
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "full_tag=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION-$ENVIRONMENT" >> $GITHUB_OUTPUT
+
+      - name: 🏗️ Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.full_tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.environment }}-latest
+          labels: |
+            org.opencontainers.image.title=Jurassic World API
+            org.opencontainers.image.description=Deployed via Repository Dispatch
+            org.opencontainers.image.version=${{ steps.tags.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            dispatch.action=${{ github.event.action }}
+            dispatch.environment=${{ steps.tags.outputs.environment }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🧪 Test deployed image
+        run: |
+          docker run --rm -d --name jurassic-dispatch-test -p 3000:3000 ${{ steps.tags.outputs.full_tag }}
+          sleep 15
+          curl -f http://localhost:3000/health || exit 1
+          curl -f http://localhost:3000/ | grep "Jurassic World API" || exit 1
+          docker stop jurassic-dispatch-test
+
+      - name: ✅ Deployment Success
+        run: |
+          echo "🎉 Deployment successful!"
+          echo "🐳 Image: ${{ steps.tags.outputs.full_tag }}"
+          echo "🌍 Environment: ${{ steps.tags.outputs.environment }}"
+          echo "📦 Version: ${{ steps.tags.outputs.version }}"
+
+  # Job für Test-Events
+  test-runner:
+    name: 🧪 Custom Test Runner
+    runs-on: ubuntu-latest
+    if: github.event.action == 'run-tests'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.ref || github.ref }}
+
+      - name: 📋 Display Test Event Info
+        run: |
+          echo "🧪 Test Event Details:"
+          echo "Test Suite: ${{ github.event.client_payload.test_suite || 'all' }}"
+          echo "Test Environment: ${{ github.event.client_payload.test_env || 'default' }}"
+          echo "Coverage: ${{ github.event.client_payload.coverage || 'false' }}"
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔍 Lint code
+        run: npm run lint
+
+      - name: 🧪 Run tests
+        run: |
+          if [ "${{ github.event.client_payload.coverage }}" = "true" ]; then
+            npm run test:cov
+          else
+            npm test
+          fi
+
+      - name: 🧪 Run E2E tests
+        if: github.event.client_payload.test_suite == 'e2e' || github.event.client_payload.test_suite == 'all'
+        run: npm run test:e2e
+
+  # Job für Dependency Updates
+  dependency-sync:
+    name: 📦 Dependency Sync
+    runs-on: ubuntu-latest
+    if: github.event.action == 'sync-dependencies'
+    
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📋 Display Dependency Event Info
+        run: |
+          echo "📦 Dependency Sync Event:"
+          echo "Source Repo: ${{ github.event.client_payload.source_repo || 'unknown' }}"
+          echo "Dependencies: ${{ github.event.client_payload.dependencies || 'all' }}"
+          echo "Update Type: ${{ github.event.client_payload.update_type || 'patch' }}"
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Update dependencies
+        run: |
+          echo "Checking for dependency updates..."
+          npm outdated || true
+          
+          # Hier könntest du spezifische Updates basierend auf dem client_payload durchführen
+          if [ "${{ github.event.client_payload.update_type }}" = "major" ]; then
+            echo "Major updates requested - manual review required"
+          else
+            npm update
+          fi
+
+      - name: 🧪 Test after dependency update
+        run: |
+          npm test
+          npm run build
+
+      - name: 📝 Create PR for dependency updates
+        if: github.event.client_payload.create_pr == 'true'
+        run: |
+          echo "Creating PR for dependency updates..."
+          # Hier würdest du normalerweise einen PR erstellen
+
+  # Job für benutzerdefinierte Builds
+  custom-build:
+    name: 🔧 Custom Build
+    runs-on: ubuntu-latest
+    if: github.event.action == 'custom-build'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.ref || github.ref }}
+
+      - name: 📋 Display Custom Build Info
+        run: |
+          echo "🔧 Custom Build Event:"
+          echo "Build Type: ${{ github.event.client_payload.build_type || 'standard' }}"
+          echo "Build Config: ${{ github.event.client_payload.build_config || 'default' }}"
+          echo "Output Format: ${{ github.event.client_payload.output_format || 'docker' }}"
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🏗️ Custom build process
+        run: |
+          BUILD_TYPE="${{ github.event.client_payload.build_type || 'standard' }}"
+          
+          case $BUILD_TYPE in
+            "debug")
+              echo "Building debug version..."
+              NODE_ENV=development npm run build
+              ;;
+            "production")
+              echo "Building production version..."
+              NODE_ENV=production npm run build
+              ;;
+            "test")
+              echo "Building test version..."
+              npm run build
+              npm test
+              ;;
+            *)
+              echo "Building standard version..."
+              npm run build
+              ;;
+          esac
+
+  # Notification Job - läuft immer am Ende
+  notify:
+    name: 📢 Notification
+    runs-on: ubuntu-latest
+    needs: [deploy, test-runner, dependency-sync, custom-build]
+    if: always()
+    
+    steps:
+      - name: 📊 Workflow Summary
+        run: |
+          echo "📋 Repository Dispatch Workflow Summary:"
+          echo "Event Action: ${{ github.event.action }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Triggered by: ${{ github.event.sender.login }}"
+          echo "Timestamp: $(date)"
+          echo ""
+          echo "Job Results:"
+          echo "Deploy: ${{ needs.deploy.result || 'skipped' }}"
+          echo "Test Runner: ${{ needs.test-runner.result || 'skipped' }}"
+          echo "Dependency Sync: ${{ needs.dependency-sync.result || 'skipped' }}"
+          echo "Custom Build: ${{ needs.custom-build.result || 'skipped' }}"
+
+      - name: ✅ Success Notification
+        if: |
+          (needs.deploy.result == 'success' || needs.deploy.result == 'skipped') &&
+          (needs.test-runner.result == 'success' || needs.test-runner.result == 'skipped') &&
+          (needs.dependency-sync.result == 'success' || needs.dependency-sync.result == 'skipped') &&
+          (needs.custom-build.result == 'success' || needs.custom-build.result == 'skipped')
+        run: |
+          echo "🎉 Repository Dispatch workflow completed successfully!"
+          echo "✅ Action: ${{ github.event.action }}"
+          echo "🔗 Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: ❌ Failure Notification
+        if: |
+          needs.deploy.result == 'failure' ||
+          needs.test-runner.result == 'failure' ||
+          needs.dependency-sync.result == 'failure' ||
+          needs.custom-build.result == 'failure'
+        run: |
+          echo "❌ Repository Dispatch workflow failed!"
+          echo "🔍 Please check the logs for details"
+          echo "🔗 Workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          exit 1

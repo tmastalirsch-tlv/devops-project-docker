@@ -1,0 +1,33 @@
+{
+  "test_config": {
+    "coverage": true,
+    "coverage_threshold": 80,
+    "test_suite": "all",
+    "test_env": "ci",
+    "parallel_execution": true,
+    "browser_tests": {
+      "enabled": true,
+      "browsers": ["chrome", "firefox", "safari"]
+    },
+    "performance_tests": {
+      "enabled": true,
+      "load_test_duration": "5m",
+      "concurrent_users": 100
+    }
+  },
+  "test_data": {
+    "use_fixtures": true,
+    "reset_database": true,
+    "seed_data": "minimal"
+  },
+  "notifications": {
+    "report_to_slack": true,
+    "slack_channel": "#test-results",
+    "create_github_comment": true
+  },
+  "artifacts": {
+    "save_screenshots": true,
+    "save_logs": true,
+    "retention_days": 30
+  }
+}

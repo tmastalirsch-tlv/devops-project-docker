@@ -24,6 +24,7 @@ A comprehensive REST API for managing Jurassic World park operations, built with
 - [Data Models](#data-models)
 - [Docker Setup](#docker-setup)
 - [Testing](#testing)
+- [Repository Dispatch](#repository-dispatch)
 - [Contributing](#contributing)
 
 ## 🚀 Installation
@@ -265,6 +266,64 @@ curl -X POST http://localhost:3000/visitors/emergency/evacuate
 ## 📚 Documentation
 
 For detailed API documentation, visit the root endpoint (`/`) after starting the server.
+
+## 🔄 Repository Dispatch
+
+Dieses Projekt unterstützt **Repository Dispatch** für erweiterte CI/CD-Workflows und Cross-Repository-Orchestration.
+
+### 🎯 Was ist Repository Dispatch?
+
+Repository Dispatch ermöglicht es, GitHub Actions Workflows über externe Events zu triggern. Es ist wie ein "Remote-Trigger" für deine Workflows.
+
+### 🚀 Verfügbare Events
+
+- **`deploy-staging`** - Deployment zur Staging-Umgebung
+- **`deploy-production`** - Deployment zur Production-Umgebung  
+- **`run-tests`** - Ausführung von Test-Suites
+- **`sync-dependencies`** - Dependency-Synchronisation
+- **`custom-build`** - Benutzerdefinierte Build-Prozesse
+
+### 🛠️ Verwendung
+
+#### Mit dem Helper Script:
+```bash
+# Einfaches Staging Deployment
+./scripts/dispatch-helper.sh -r owner/target-repo -e deploy-staging
+
+# Mit custom Payload
+./scripts/dispatch-helper.sh -r owner/target-repo -e run-tests -p examples/payloads/run-tests.json
+```
+
+#### Über GitHub Actions UI:
+1. Gehe zu Actions → "Repository Dispatch Sender"  
+2. Wähle Event Type und Parameter
+3. Führe den Workflow aus
+
+#### Über GitHub API:
+```bash
+curl -X POST \
+  -H "Authorization: token $GITHUB_TOKEN" \
+  https://api.github.com/repos/OWNER/REPO/dispatches \
+  -d '{"event_type": "deploy-staging", "client_payload": {...}}'
+```
+
+### 📚 Weiterführende Dokumentation
+
+- 📖 **[Vollständige Dokumentation](docs/REPOSITORY_DISPATCH.md)** - Detaillierte Anleitung und Konfiguration
+- 📋 **[Beispiele](examples/README.md)** - Praktische Anwendungsfälle und Payload-Beispiele
+- 🔧 **[Helper Script](scripts/dispatch-helper.sh)** - Kommandozeilen-Tool für einfache Verwendung
+
+### 🔑 Setup
+
+1. **Für gleiches Repository**: Verwende `GITHUB_TOKEN` (automatisch verfügbar)
+2. **Für andere Repositories**: Erstelle Personal Access Token mit `repo` scope als `DISPATCH_TOKEN` Secret
+
+**Perfekt für:**
+- ✅ Multi-Repository Deployments
+- ✅ Cross-Service Integration  
+- ✅ Event-driven CI/CD
+- ✅ Emergency Deployments
+- ✅ Dependency Orchestration
 
 ## 🤝 Contributing
 

@@ -1,0 +1,36 @@
+{
+  "build_config": {
+    "build_type": "production",
+    "output_format": "docker",
+    "optimization_level": "aggressive",
+    "target_platforms": ["linux/amd64", "linux/arm64"],
+    "include_debug_symbols": false
+  },
+  "docker_config": {
+    "base_image": "node:22-alpine",
+    "multi_stage": true,
+    "layer_caching": true,
+    "security_scan": true,
+    "push_to_registry": true,
+    "registries": [
+      "ghcr.io",
+      "docker.io"
+    ]
+  },
+  "build_args": {
+    "NODE_ENV": "production",
+    "API_VERSION": "v2",
+    "ENABLE_ANALYTICS": "true"
+  },
+  "post_build": {
+    "run_tests": true,
+    "vulnerability_scan": true,
+    "size_analysis": true,
+    "create_sbom": true
+  },
+  "notifications": {
+    "slack_channel": "#builds",
+    "notify_on_failure": true,
+    "notify_on_success": false
+  }
+}

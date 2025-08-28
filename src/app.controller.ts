@@ -18,7 +18,15 @@ export class AppController {
         staff: '/staff - Staff and ranger management',
         incidents: '/incidents - Incident reporting and emergency management'
       },
-      status: this.appService.getSystemStatus()
+      status: {
+        park_status: 'operational',
+        security_level: 'green',
+        active_dinosaurs: 'all contained',
+        weather_conditions: 'favorable',
+        visitor_capacity: 'normal',
+        emergency_systems: 'all_online',
+        last_updated: new Date().toISOString()
+      }
     };
   }
 

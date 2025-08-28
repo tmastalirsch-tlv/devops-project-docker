@@ -1,0 +1,37 @@
+{
+  "environment": "production",
+  "version": "v1.2.3",
+  "deployment": {
+    "type": "rolling",
+    "rollback_enabled": true,
+    "health_check_timeout": 600,
+    "requires_approval": true,
+    "approval_timeout": 3600,
+    "pre_deploy_tasks": [
+      "database-backup",
+      "database-migration",
+      "cache-warm-up",
+      "cdn-purge"
+    ],
+    "post_deploy_tasks": [
+      "smoke-tests",
+      "performance-tests"
+    ]
+  },
+  "notifications": {
+    "slack_channel": "#production-deployments",
+    "email_on_failure": true,
+    "email_on_success": true,
+    "teams_webhook": "https://outlook.office.com/webhook/..."
+  },
+  "monitoring": {
+    "enable_extra_logging": true,
+    "alert_threshold_cpu": 80,
+    "alert_threshold_memory": 85
+  },
+  "feature_flags": {
+    "new_api_endpoint": false,
+    "experimental_feature": false,
+    "maintenance_mode": false
+  }
+}

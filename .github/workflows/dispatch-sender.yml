@@ -1,0 +1,252 @@
+name: 📤 Repository Dispatch Sender
+
+# Dieser Workflow sendet Repository Dispatch Events an andere Repositories
+on:
+  workflow_dispatch:
+    inputs:
+      target_repository:
+        description: 'Target repository (format: owner/repo)'
+        required: true
+        default: 'your-org/target-repo'
+      event_type:
+        description: 'Event type to dispatch'
+        required: true
+        default: 'deploy-staging'
+        type: choice
+        options:
+          - deploy-staging
+          - deploy-production
+          - run-tests
+          - sync-dependencies
+          - custom-build
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+          - development
+          - testing
+      version:
+        description: 'Version to deploy/build'
+        required: false
+        default: 'latest'
+      additional_payload:
+        description: 'Additional JSON payload (optional)'
+        required: false
+        default: '{}'
+
+  # Automatische Dispatch Events nach erfolgreichen Releases
+  workflow_run:
+    workflows: ["🚀 Release"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  dispatch:
+    name: 📤 Send Repository Dispatch
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📋 Prepare Event Data
+        id: prepare
+        run: |
+          # Für manuelle Triggers
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "target_repo=${{ github.event.inputs.target_repository }}" >> $GITHUB_OUTPUT
+            echo "event_type=${{ github.event.inputs.event_type }}" >> $GITHUB_OUTPUT
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "additional_payload=${{ github.event.inputs.additional_payload }}" >> $GITHUB_OUTPUT
+          fi
+          
+          # Für automatische Triggers nach Release
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Beispiel: Nach Release automatisch Staging-Deployment triggern
+            echo "target_repo=your-org/deployment-repo" >> $GITHUB_OUTPUT
+            echo "event_type=deploy-staging" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "version=latest" >> $GITHUB_OUTPUT
+            echo "additional_payload={\"auto_triggered\": true}" >> $GITHUB_OUTPUT
+          fi
+          
+          # Aktuelle Git-Informationen sammeln
+          echo "current_ref=${{ github.ref }}" >> $GITHUB_OUTPUT
+          echo "current_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "current_repo=${{ github.repository }}" >> $GITHUB_OUTPUT
+
+      - name: 🔍 Validate Inputs
+        run: |
+          echo "🔍 Validating dispatch configuration..."
+          echo "Target Repository: ${{ steps.prepare.outputs.target_repo }}"
+          echo "Event Type: ${{ steps.prepare.outputs.event_type }}"
+          echo "Environment: ${{ steps.prepare.outputs.environment }}"
+          echo "Version: ${{ steps.prepare.outputs.version }}"
+          echo "Source Repository: ${{ steps.prepare.outputs.current_repo }}"
+          echo "Source Ref: ${{ steps.prepare.outputs.current_ref }}"
+          echo "Source SHA: ${{ steps.prepare.outputs.current_sha }}"
+
+      - name: 🏗️ Build Client Payload
+        id: payload
+        run: |
+          # Base payload erstellen
+          PAYLOAD=$(cat <<EOF
+          {
+            "ref": "${{ steps.prepare.outputs.current_ref }}",
+            "sha": "${{ steps.prepare.outputs.current_sha }}",
+            "source_repository": "${{ steps.prepare.outputs.current_repo }}",
+            "environment": "${{ steps.prepare.outputs.environment }}",
+            "version": "${{ steps.prepare.outputs.version }}",
+            "triggered_by": "${{ github.actor }}",
+            "workflow_run_id": "${{ github.run_id }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          )
+          
+          # Additional payload mergen falls vorhanden
+          ADDITIONAL='${{ steps.prepare.outputs.additional_payload }}'
+          if [ "$ADDITIONAL" != "{}" ] && [ -n "$ADDITIONAL" ]; then
+            PAYLOAD=$(echo "$PAYLOAD" | jq --argjson additional "$ADDITIONAL" '. + $additional')
+          fi
+          
+          # Event-spezifische Daten hinzufügen
+          case "${{ steps.prepare.outputs.event_type }}" in
+            "deploy-staging"|"deploy-production")
+              PAYLOAD=$(echo "$PAYLOAD" | jq '. + {
+                "deployment": {
+                  "type": "automated",
+                  "source": "repository_dispatch",
+                  "environment": "${{ steps.prepare.outputs.environment }}"
+                }
+              }')
+              ;;
+            "run-tests")
+              PAYLOAD=$(echo "$PAYLOAD" | jq '. + {
+                "test_config": {
+                  "coverage": true,
+                  "test_suite": "all",
+                  "test_env": "${{ steps.prepare.outputs.environment }}"
+                }
+              }')
+              ;;
+            "sync-dependencies")
+              PAYLOAD=$(echo "$PAYLOAD" | jq '. + {
+                "dependency_sync": {
+                  "source_repo": "${{ steps.prepare.outputs.current_repo }}",
+                  "update_type": "patch",
+                  "create_pr": true
+                }
+              }')
+              ;;
+            "custom-build")
+              PAYLOAD=$(echo "$PAYLOAD" | jq '. + {
+                "build_config": {
+                  "build_type": "production",
+                  "output_format": "docker"
+                }
+              }')
+              ;;
+          esac
+          
+          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+          echo "📦 Generated payload:"
+          echo "$PAYLOAD" | jq '.'
+
+      - name: 📤 Send Repository Dispatch
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+          repository: ${{ steps.prepare.outputs.target_repo }}
+          event-type: ${{ steps.prepare.outputs.event_type }}
+          client-payload: ${{ steps.payload.outputs.payload }}
+
+      - name: ✅ Dispatch Success
+        run: |
+          echo "🎉 Repository dispatch sent successfully!"
+          echo "🎯 Target: ${{ steps.prepare.outputs.target_repo }}"
+          echo "📡 Event: ${{ steps.prepare.outputs.event_type }}"
+          echo "🌍 Environment: ${{ steps.prepare.outputs.environment }}"
+          echo "📦 Version: ${{ steps.prepare.outputs.version }}"
+          echo ""
+          echo "🔗 Monitor the target repository's Actions tab to see the triggered workflow."
+
+  # Beispiel für Dispatch an mehrere Repositories
+  multi-dispatch:
+    name: 📤 Multi-Repository Dispatch
+    runs-on: ubuntu-latest
+    if: github.event.inputs.event_type == 'deploy-production' && github.event_name == 'workflow_dispatch'
+    
+    strategy:
+      matrix:
+        target:
+          - repo: 'your-org/frontend-app'
+            environment: 'production'
+          - repo: 'your-org/backend-services'
+            environment: 'production'
+          - repo: 'your-org/monitoring-stack'
+            environment: 'production'
+    
+    steps:
+      - name: 📤 Dispatch to ${{ matrix.target.repo }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+          repository: ${{ matrix.target.repo }}
+          event-type: 'deploy-production'
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}",
+              "source_repository": "${{ github.repository }}",
+              "environment": "${{ matrix.target.environment }}",
+              "version": "${{ github.event.inputs.version }}",
+              "triggered_by": "${{ github.actor }}",
+              "multi_deployment": true,
+              "timestamp": "${{ github.event.head_commit.timestamp }}"
+            }
+
+      - name: ✅ Dispatch to ${{ matrix.target.repo }} completed
+        run: |
+          echo "✅ Successfully dispatched to ${{ matrix.target.repo }}"
+          echo "🌍 Environment: ${{ matrix.target.environment }}"
+
+  notify:
+    name: 📢 Dispatch Notification
+    runs-on: ubuntu-latest
+    needs: [dispatch, multi-dispatch]
+    if: always()
+    
+    steps:
+      - name: 📊 Dispatch Summary
+        run: |
+          echo "📋 Repository Dispatch Summary:"
+          echo "Trigger Type: ${{ github.event_name }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Timestamp: $(date)"
+          echo ""
+          echo "Results:"
+          echo "Single Dispatch: ${{ needs.dispatch.result }}"
+          echo "Multi Dispatch: ${{ needs.multi-dispatch.result || 'skipped' }}"
+
+      - name: ✅ Success Notification
+        if: needs.dispatch.result == 'success'
+        run: |
+          echo "🎉 All repository dispatch events sent successfully!"
+          echo "📡 Check target repositories for triggered workflows"
+
+      - name: ❌ Failure Notification
+        if: needs.dispatch.result == 'failure' || needs.multi-dispatch.result == 'failure'
+        run: |
+          echo "❌ Some repository dispatch events failed!"
+          echo "🔍 Check the workflow logs for details"
+          exit 1

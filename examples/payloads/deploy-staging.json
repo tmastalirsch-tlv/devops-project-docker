@@ -1,0 +1,21 @@
+{
+  "environment": "staging",
+  "version": "v1.2.3",
+  "deployment": {
+    "type": "blue-green",
+    "rollback_enabled": true,
+    "health_check_timeout": 300,
+    "pre_deploy_tasks": [
+      "database-migration",
+      "cache-warm-up"
+    ]
+  },
+  "notifications": {
+    "slack_channel": "#deployments",
+    "email_on_failure": true
+  },
+  "feature_flags": {
+    "new_api_endpoint": true,
+    "experimental_feature": false
+  }
+}
